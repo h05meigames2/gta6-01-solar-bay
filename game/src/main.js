@@ -1,17 +1,13 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s steps
-// (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
-// moves between four screens: title, play, paused and game over.
-//
-// ?seed=N fixes the falling pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, LIVES, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createWorld, EVENT_HIT, EVENT_OVER } from './world.js';
-import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// SOLAR BAY boot and main loop: title, play, paused, busted; fixed-step updates,
+// mouse aim, shooting, and the ?shot= screenshot mode (paints twice, sets __shotReady).
+import { SAVE_KEY, STEP } from './config.js';
+import { createRandom } from './rng.js';
+import { createWorld } from './world.js';
+import { ACTION_CONFIRM, ACTION_ENTER_CAR, ACTION_MISSION, ACTION_PAUSE, ACTION_PUNCH, createInput } from './input.js';
+import { createRenderer, SCREEN_BUSTED, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 import { stageShot } from './shots.js';
+import { unlockAudio } from './audio.js';
 
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
 const MAX_FRAME = 0.25;
 
 const params = new URLSearchParams(window.location.search);
@@ -24,19 +20,15 @@ const status = document.getElementById('status');
 const world = createWorld(createRandom(seed));
 const renderer = createRenderer(canvas);
 
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
-  }
-}
+// Debug/test handle: the shoot harness reads live state through this.
+window.__solarbay = world;
 
-function saveBest(value) {
+function readSave() {
   try {
-    window.localStorage.setItem(BEST_KEY, String(value));
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
+    return null;
   }
 }
 
@@ -54,52 +46,83 @@ function runShot(name) {
 
 function runGame() {
   const input = createInput(canvas);
+  const save = readSave();
   let screen = SCREEN_TITLE;
-  let best = readBest();
+  let best = save?.bestCash ?? 0;
   let accumulator = 0;
   let last = performance.now();
 
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
   function announce(message) {
     status.textContent = message;
   }
 
   function startGame() {
-    world.reset();
-    accumulator = 0;
+    unlockAudio();
+    world.reset(save);
     screen = SCREEN_PLAY;
-    announce(`Playing. ${LIVES} lives.`);
-  }
-
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
-    }
-    announce(`Game over. Score ${world.state.score}. Best ${best}.`);
+    world.state.screen = 'play';
+    announce('Playing Solar Bay. First job: steal a car for Mara Sol.');
   }
 
   function handleActions() {
     const actions = input.takeActions();
-    if (actions & ACTION_CONFIRM && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
-      announce('Playing.');
+    if (actions & ACTION_CONFIRM) {
+      if (screen === SCREEN_TITLE) startGame();
+      else if (screen === SCREEN_BUSTED) {
+        screen = SCREEN_PLAY;
+        world.state.screen = 'play';
+        announce('Back on the street.');
+      } else if (screen === SCREEN_PAUSED) {
+        screen = SCREEN_PLAY;
+        world.state.screen = 'play';
+      }
+    }
+    if (actions & ACTION_PAUSE) {
+      if (screen === SCREEN_PLAY) {
+        screen = SCREEN_PAUSED;
+        world.state.screen = 'paused';
+        announce('Paused.');
+      } else if (screen === SCREEN_PAUSED) {
+        screen = SCREEN_PLAY;
+        world.state.screen = 'play';
+      }
+    }
+    if (screen === SCREEN_PLAY) {
+      if (actions & ACTION_ENTER_CAR) world.tryEnterCar();
+      if (actions & ACTION_PUNCH) world.punch();
+      if (actions & ACTION_MISSION) {
+        const m = world.currentMission();
+        if (m) world.say(`JOB — ${m.name} ($${m.pay}): ${m.brief}`, 7);
+        else world.say('All jobs done. Free roam — the Bay is yours.', 5);
+      }
     }
   }
 
+  function aimAngle() {
+    const p = world.state.player;
+    const cam = renderer.cam;
+    const view = renderer.view;
+    const px = p.x - cam.x + view.w / 2;
+    const py = p.y - cam.y + view.h / 2;
+    const m = input.mouse;
+    return Math.atan2(m.y - py, m.x - px);
+  }
+
   function step() {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, 0, true);
-      return;
+    if (screen !== SCREEN_PLAY) return;
+    const p = world.state.player;
+    // On foot the player faces the mouse; in a car the car faces its heading.
+    if (!p.inCar) p.angle = aimAngle();
+    world.step(STEP, input, aimAngle());
+    // Hold mouse to fire the pistol on foot.
+    if (input.mouse.down && !p.inCar && p.shootTimer <= 0) {
+      world.shootAt(p.x, p.y, aimAngle(), 34, true);
+      p.shootTimer = 0.28;
     }
-    const events = world.step(STEP, input.direction(), false);
-    if (events & EVENT_OVER) endGame();
-    else if (events & EVENT_HIT) announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
+    if (world.state.screen === 'busted') {
+      screen = SCREEN_BUSTED;
+      best = Math.max(best, world.state.cash);
+    }
   }
 
   function frame(now) {
@@ -107,26 +130,28 @@ function runGame() {
     accumulator += Math.min((now - last) / 1000, MAX_FRAME);
     last = now;
     handleActions();
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
+    if (screen === SCREEN_PLAY) {
+      while (accumulator >= STEP && screen === SCREEN_PLAY) {
         step();
         accumulator -= STEP;
       }
     } else {
       accumulator = 0;
+      // Title screen: keep the city alive behind the menu (marker bobbing).
+      if (screen === SCREEN_TITLE) world.state.time += 0.016;
     }
     renderer.draw(world.state, screen, best);
   }
 
-  // Leaving the tab pauses a running game rather than letting blocks fall unseen.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && screen === SCREEN_PLAY) {
       screen = SCREEN_PAUSED;
+      world.state.screen = 'paused';
       announce('Paused.');
     }
   });
 
-  announce('Block Dodger. Press Space or click to start.');
+  announce('Solar Bay. Press Enter or click to start.');
   requestAnimationFrame(frame);
 }
 

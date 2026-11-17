@@ -1,53 +1,78 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
-
+// Keyboard + mouse input: held keys as a set, edge-triggered actions, mouse aim.
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
+export const ACTION_ENTER_CAR = 4;
+export const ACTION_PUNCH = 8;
+export const ACTION_SHOOT = 16;
+export const ACTION_MISSION = 32;
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-
-export function createInput(target) {
-  let left = false;
-  let right = false;
+export function createInput(canvas) {
+  const keys = new Set();
   let actions = 0;
+  let mouseX = 0;
+  let mouseY = 0;
+  let mouseDown = false;
 
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
+  function keyDown(e) {
+    if (e.repeat) return;
+    keys.add(e.code);
+    if (e.code === 'Space' || e.code === 'Enter') actions |= ACTION_CONFIRM;
+    if (e.code === 'KeyP' || e.code === 'Escape') actions |= ACTION_PAUSE;
+    if (e.code === 'KeyE') actions |= ACTION_ENTER_CAR;
+    if (e.code === 'KeyF') actions |= ACTION_PUNCH;
+    if (e.code === 'KeyM') actions |= ACTION_MISSION;
+    if (e.code === 'Space') actions |= ACTION_PUNCH;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  }
+  function keyUp(e) {
+    keys.delete(e.code);
+  }
+  function mouseMove(e) {
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left;
+    mouseY = e.clientY - r.top;
+  }
+  function mouseDownFn(e) {
+    mouseMove(e);
+    mouseDown = true;
+    if (e.button === 0) actions |= ACTION_SHOOT;
+  }
+  function mouseUpFn() {
+    mouseDown = false;
+  }
+
+  window.addEventListener('keydown', keyDown);
+  window.addEventListener('keyup', keyUp);
+  canvas.addEventListener('mousemove', mouseMove);
+  canvas.addEventListener('mousedown', mouseDownFn);
+  window.addEventListener('mouseup', mouseUpFn);
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
+    // Movement vector in world space, normalised, from WASD/arrows.
+    moveVector() {
+      let x = 0;
+      let y = 0;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) y -= 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) y += 1;
+      if (x !== 0 && y !== 0) {
+        x *= Math.SQRT1_2;
+        y *= Math.SQRT1_2;
+      }
+      return { x, y };
     },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
+    get up() { return keys.has('KeyW') || keys.has('ArrowUp'); },
+    get down() { return keys.has('KeyS') || keys.has('ArrowDown'); },
+    get left() { return keys.has('KeyA') || keys.has('ArrowLeft'); },
+    get right() { return keys.has('KeyD') || keys.has('ArrowRight'); },
+    get run() { return keys.has('ShiftLeft') || keys.has('ShiftRight'); },
+    get mouse() { return { x: mouseX, y: mouseY, down: mouseDown }; },
     takeActions() {
-      const taken = actions;
+      const a = actions;
       actions = 0;
-      return taken;
+      return a;
     },
   };
 }

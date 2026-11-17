@@ -1,61 +1,59 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
-
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
-
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
+// SOLAR BAY — shared constants: city size, speeds, wanted rules, mission pay.
+// All names, places and people here are original fiction for this game.
+export const CITY = 3190; // city is CITY x CITY world units
+export const ROAD = 110; // road band width
+export const BLOCK = 330; // block side
 export const STEP = 1 / 60;
+export const SAVE_KEY = 'solarbay-save-v1';
 
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
-};
+export const PLAYER_WALK = 175;
+export const PLAYER_RUN = 245;
+export const CAR_TOP_SPEED = 430;
+export const CAR_ACCEL = 300;
+export const CAR_REVERSE = 170;
+export const CAR_TURN = 2.6;
 
-export const LIVES = 3;
+export const WANTED_MAX = 5;
+export const WANTED_DECAY_SECONDS = 26;
+export const POLICE_MAX = 8;
 
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
-};
+export const PISTOL_DAMAGE = 34;
+export const PISTOL_RANGE = 340;
+export const PISTOL_COOLDOWN = 0.28;
+export const PUNCH_DAMAGE = 18;
+export const PUNCH_RANGE = 46;
 
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
-};
+export const MISSIONS = [
+  {
+    id: 'm1',
+    name: 'First Wheels',
+    giver: 'Mara Sol',
+    pay: 300,
+    brief: 'Mara needs wheels for her garage. Take any parked car on the street and bring it to the garage on Coral Row.',
+    objective: 'Steal a car and drive it to Mara\u2019s Garage',
+  },
+  {
+    id: 'm2',
+    name: 'Sunset Run',
+    giver: 'Mara Sol',
+    pay: 500,
+    brief: 'A sealed crate waits at the old depot. The Vex crew wants it too. Grab the crate and deliver it to the pier before the tide turns.',
+    objective: 'Pick up the crate at the depot, then reach the pier',
+  },
+  {
+    id: 'm3',
+    name: 'Heat Wave',
+    giver: 'Dario Flint',
+    pay: 400,
+    brief: 'The Bay Patrol is all over the marina after the depot job. Shake the heat: lose your wanted level, or outlast the chase for a full minute.',
+    objective: 'Lose the cops — drop to 0 stars or survive 60s at 2+ stars',
+  },
+];
 
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
-
-export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
-};
-
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';
+export const STORY_INTRO = [
+  'SOLAR BAY — a sun-soaked port city where the tide brings in more than fish.',
+  'You are RIKO VALE, new in town, broke, with a borrowed jacket and a fast pair of hands.',
+  'MARA SOL runs a garage on Coral Row and pays cash for drivers who ask no questions.',
+  'The VEX CREW owns the night docks. The BAY PATROL owns the streets.',
+  'Take the work. Keep the wheels. Don\u2019t get caught.',
+];
